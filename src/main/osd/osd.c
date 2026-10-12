@@ -464,6 +464,10 @@ void pgResetFn_osdElementConfig(osdElementConfig_t *osdElementConfig)
     osdElementConfig->item_pos[OSD_HORIZON_SIDEBARS]   = OSD_POS((midCol - 1), (midRow - 1));
     osdElementConfig->item_pos[OSD_CAMERA_FRAME]       = OSD_POS((midCol - 12), (midRow - 6));
     osdElementConfig->item_pos[OSD_UP_DOWN_REFERENCE]  = OSD_POS((midCol - 2), (midRow - 1));
+#ifdef USE_TRICK_DETECTOR
+    // upper third, centred (the element pads its text to 25 columns)
+    osdElementConfig->item_pos[OSD_TRICK]              = OSD_POS((midCol - 12), (midRow - 4));
+#endif
 #ifdef USE_OSD_NAV_MAP
     // multi-row map: default to the top-left corner so it never overlaps the
     // centred defaults of the single-row elements

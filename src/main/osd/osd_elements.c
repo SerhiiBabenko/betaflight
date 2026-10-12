@@ -159,6 +159,7 @@
 #include "flight/position.h"
 #include "flight/imu.h"
 #include "flight/mixer.h"
+#include "flight/trick_detector_task.h"
 #include "flight/pid.h"
 #include "flight/pos_hold.h"
 
@@ -759,6 +760,25 @@ static void osdElementCustomSerialText(osdElementParms_t *element)
     } else {
         strcpy(element->buff, "---");
     }
+}
+#endif
+
+#ifdef USE_TRICK_DETECTOR
+#define OSD_TRICK_WIDTH 25     // longest v2 text: "TRIPLE INVERTED YAW SPIN!"
+
+// Trick announcement, steady (no blink), centred within OSD_TRICK_WIDTH columns
+static void osdElementTrick(osdElementParms_t *element)
+{
+    const char *text = trickDetectorAnnouncement(micros());
+    if (!text) {
+        element->buff[0] = '\0';
+        return;
+    }
+    const int len = MIN((int)strlen(text), OSD_TRICK_WIDTH);
+    const int pad = (OSD_TRICK_WIDTH - len) / 2;
+    memset(element->buff, ' ', pad);
+    memcpy(element->buff + pad, text, len);
+    element->buff[pad + len] = '\0';
 }
 #endif
 
@@ -2185,6 +2205,9 @@ static const uint8_t osdElementDisplayOrder[] = {
 #if ENABLE_OSD_CUSTOM_TEXT
     OSD_CUSTOM_SERIAL_TEXT,
 #endif
+#ifdef USE_TRICK_DETECTOR
+    OSD_TRICK,
+#endif
 };
 
 // Define the mapping between the OSD element id and the function to draw it
@@ -2351,6 +2374,9 @@ const osdElementDrawFn osdElementDrawFunction[OSD_ITEM_COUNT] = {
 #endif
 #if ENABLE_OSD_CUSTOM_TEXT
     [OSD_CUSTOM_SERIAL_TEXT]      = osdElementCustomSerialText,
+#endif
+#ifdef USE_TRICK_DETECTOR
+    [OSD_TRICK]                   = osdElementTrick,
 #endif
 };
 

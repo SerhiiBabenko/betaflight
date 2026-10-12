@@ -229,6 +229,10 @@ typedef enum {
     OSD_POS_HOLD_READY,         // pre-engagement Position Hold readiness indicator
 #endif
 
+#ifdef USE_TRICK_DETECTOR
+    OSD_TRICK,                  // Trick announcement ("DOUBLE BACK FLIP!")
+#endif
+
     OSD_ITEM_COUNT // MUST BE LAST
 } osd_items_e;
 

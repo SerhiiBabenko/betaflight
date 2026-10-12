@@ -1700,6 +1700,9 @@ const clivalue_t valueTable[] = {
 #endif //USE_RANGEFINDER
 #if ENABLE_OSD_CUSTOM_TEXT
     { "osd_custom_serial_text_pos", VAR_UINT16  | MASTER_VALUE, .config.minmaxUnsigned = { 0, OSD_POSCFG_MAX }, PG_OSD_ELEMENT_CONFIG, offsetof(osdElementConfig_t, item_pos[OSD_CUSTOM_SERIAL_TEXT]) },
+#ifdef USE_TRICK_DETECTOR
+    { "osd_trick_pos",              VAR_UINT16  | MASTER_VALUE, .config.minmaxUnsigned = { 0, OSD_POSCFG_MAX }, PG_OSD_ELEMENT_CONFIG, offsetof(osdElementConfig_t, item_pos[OSD_TRICK]) },
+#endif
     { "osd_custom_serial_text_terminator", VAR_UINT8 | MASTER_VALUE | MODE_LOOKUP, .config.lookup = { TABLE_OSD_CUSTOM_TEXT_TERMINATOR }, PG_OSD_CUSTOM_TEXT_CONFIG, offsetof(osdCustomTextConfig_t, terminator) },
 #endif //ENABLE_OSD_CUSTOM_TEXT
 #if defined(USE_GPS) && ENABLE_FLIGHT_PLAN
