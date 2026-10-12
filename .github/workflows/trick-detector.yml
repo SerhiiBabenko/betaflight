@@ -1,0 +1,57 @@
+# Trick detector fork CI: firmware for the pilot's boards + unit tests.
+name: Trick detector
+
+on:
+  push:
+    branches:
+      - 'trick-detector/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache ARM toolchain
+        uses: actions/cache@v4
+        with:
+          path: tools
+          key: arm-sdk-${{ hashFiles('mk/tools.mk') }}
+
+      - name: Install toolchain and board configs
+        run: |
+          make arm_sdk_install
+          make configs
+
+      - name: Unit tests (trick detector, OSD, CLI)
+        run: |
+          cd src/test
+          make USE_COVERAGE= test_trick_detector_unittest test_osd_unittest test_cli_unittest
+
+      - name: Build replay tool
+        run: make -C src/test/trick_replay
+
+      - name: Build firmware
+        run: |
+          for board in SPEEDYBEEF405AIO SPEEDYBEEF405V4; do
+            make -j"$(nproc)" CONFIG=$board
+          done
+
+      - name: Upload firmware
+        uses: actions/upload-artifact@v4
+        with:
+          name: trick-detector-hex-${{ github.sha }}
+          path: obj/*.hex
+          retention-days: 30
+
+      - name: Upload replay tool
+        uses: actions/upload-artifact@v4
+        with:
+          name: trick-replay-linux-${{ github.sha }}
+          path: obj/trick_replay
+          retention-days: 30
