@@ -120,6 +120,7 @@
 #include "pg/sdio.h"
 #include "pg/rcdevice.h"
 #include "pg/stats.h"
+#include "pg/trick_detector.h"
 #include "pg/board.h"
 
 #include "rx/a7105_flysky.h"
@@ -2090,6 +2091,14 @@ const clivalue_t valueTable[] = {
     { "box_user_2_name", VAR_UINT8 | HARDWARE_VALUE | MODE_STRING, .config.string = { 1, MAX_BOX_USER_NAME_LENGTH, STRING_FLAGS_NONE }, PG_MODE_ACTIVATION_CONFIG, offsetof(modeActivationConfig_t, box_user_names[1]) },
     { "box_user_3_name", VAR_UINT8 | HARDWARE_VALUE | MODE_STRING, .config.string = { 1, MAX_BOX_USER_NAME_LENGTH, STRING_FLAGS_NONE }, PG_MODE_ACTIVATION_CONFIG, offsetof(modeActivationConfig_t, box_user_names[2]) },
     { "box_user_4_name", VAR_UINT8 | HARDWARE_VALUE | MODE_STRING, .config.string = { 1, MAX_BOX_USER_NAME_LENGTH, STRING_FLAGS_NONE }, PG_MODE_ACTIVATION_CONFIG, offsetof(modeActivationConfig_t, box_user_names[3]) },
+#endif
+
+#ifdef USE_TRICK_DETECTOR
+    { "trick_hover_throttle", VAR_UINT8  | MASTER_VALUE, .config.minmaxUnsigned = { 0, 100 }, PG_TRICK_DETECTOR_CONFIG, offsetof(trickDetectorConfig_t, hover_throttle) },
+    { "trick_loop_share", VAR_UINT8  | MASTER_VALUE, .config.minmaxUnsigned = { 0, 100 }, PG_TRICK_DETECTOR_CONFIG, offsetof(trickDetectorConfig_t, loop_share) },
+    { "trick_loop_min_ms", VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = { 0, 5000 }, PG_TRICK_DETECTOR_CONFIG, offsetof(trickDetectorConfig_t, loop_min_ms) },
+    { "trick_recover_ms", VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = { 100, 2000 }, PG_TRICK_DETECTOR_CONFIG, offsetof(trickDetectorConfig_t, recover_ms) },
+    { "trick_announce_ms", VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = { 500, 5000 }, PG_TRICK_DETECTOR_CONFIG, offsetof(trickDetectorConfig_t, announce_ms) },
 #endif
 
 #if defined(USE_GIMBAL)

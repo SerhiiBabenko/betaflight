@@ -48,6 +48,7 @@ PG_SRC = \
             pg/serial_uart.c \
             pg/stats.c \
             pg/timerio.c \
+            pg/trick_detector.c \
             pg/timerup.c \
             pg/usb.c \
             pg/vcd.c \
@@ -190,6 +191,8 @@ COMMON_SRC = \
             flight/rpm_filter.c \
             flight/servos.c \
             flight/servos_tricopter.c \
+            flight/trick_detector.c \
+            flight/trick_detector_task.c \
             io/serial_4way.c \
             io/serial_4way_avrootloader.c \
             io/serial_4way_stk500v2.c \

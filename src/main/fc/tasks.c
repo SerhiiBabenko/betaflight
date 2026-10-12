@@ -90,6 +90,7 @@
 
 #include "rx/rx.h"
 #include "rx/rc_stats.h"
+#include "flight/trick_detector_task.h"
 
 #include "scheduler/scheduler.h"
 
@@ -486,6 +487,9 @@ task_attribute_t task_attributes[TASK_COUNT] = {
 #ifdef USE_RC_STATS
     [TASK_RC_STATS] = DEFINE_TASK("RC_STATS", NULL, NULL, rcStatsUpdate, TASK_PERIOD_HZ(100), TASK_PRIORITY_LOW),
 #endif
+#ifdef USE_TRICK_DETECTOR
+    [TASK_TRICK_DETECTOR] = DEFINE_TASK("TRICK", NULL, NULL, trickDetectorUpdate, TASK_PERIOD_HZ(TRICK_DETECTOR_TASK_RATE_HZ), TASK_PRIORITY_LOW),
+#endif
 
 #ifdef USE_GIMBAL
     [TASK_GIMBAL] = DEFINE_TASK("GIMBAL", NULL, NULL, gimbalUpdate, TASK_PERIOD_HZ(100), TASK_PRIORITY_MEDIUM),
@@ -689,6 +693,9 @@ void tasksInit(void)
 
 #ifdef USE_RC_STATS
     setTaskEnabled(TASK_RC_STATS, true);
+#endif
+#ifdef USE_TRICK_DETECTOR
+    setTaskEnabled(TASK_TRICK_DETECTOR, true);
 #endif
 
 #ifdef USE_GIMBAL

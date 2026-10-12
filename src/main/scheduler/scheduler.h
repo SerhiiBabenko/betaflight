@@ -197,6 +197,9 @@ typedef enum {
 #ifdef USE_RC_STATS
     TASK_RC_STATS,
 #endif
+#ifdef USE_TRICK_DETECTOR
+    TASK_TRICK_DETECTOR,
+#endif
 #ifdef USE_GIMBAL
     TASK_GIMBAL,
 #endif

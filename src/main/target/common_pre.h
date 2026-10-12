@@ -277,6 +277,7 @@
 // Dependency for CMS is defined outside this block.
 #define USE_OSD_QUICK_MENU
 #define USE_RC_STATS
+#define USE_TRICK_DETECTOR
 #define USE_SPEC_PREARM_SCREEN
 #endif
 
