@@ -649,6 +649,9 @@ osd_nav_map_unittest_DEFINES := \
 rcdevice_unittest_DEFINES := \
 		USE_RCDEVICE=
 
+trick_detector_unittest_SRC := \
+		$(USER_DIR)/flight/trick_detector.c
+
 vtx_unittest_SRC := \
 		$(USER_DIR)/fc/core.c \
 		$(USER_DIR)/fc/dispatch.c \
