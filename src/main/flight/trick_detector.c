@@ -52,6 +52,8 @@
 #define HOVER_INIT          0.30f
 #define HOVER_N_MAX         2000
 
+#define US(seconds)         ((uint32_t)lrintf((seconds) * 1e6f))
+
 #define DEG2RAD             0.017453292519943295f
 #define RAD2DEG             57.29577951308232f
 
@@ -129,35 +131,35 @@ static void beginSegment(trickDetector_t *d)
 {
     d->out = true;
     d->sawInverted = false;
-    d->tLeave = d->t;
-    d->stopSince = 0.0f;
+    d->tLeaveUs = d->tUs;
+    d->stopSinceUs = 0;
     memset(d->ang, 0, sizeof(d->ang));
     memset(d->binOn, 0, sizeof(d->binOn));
     memset(d->binTot, 0, sizeof(d->binTot));
     d->progress = 0.0f;
 
-    const float leaveDt = histAt(d, 0)->dtUs * 1e-6f;
+    const uint32_t leaveDtUs = histAt(d, 0)->dtUs;
     for (int axis = 0; axis < 2; axis++) {
         for (int sg = 0; sg < 2; sg++) {
             const float sign = sg ? 1.0f : -1.0f;
             float *pre = d->preAng[axis][sg];
             pre[0] = pre[1] = pre[2] = 0.0f;
-            float tEntry = d->tLeave - leaveDt;          // time of entry 1
-            float t0 = d->tLeave;
+            uint32_t tEntryUs = d->tLeaveUs - leaveDtUs;   // time of entry 1
+            uint32_t t0Us = d->tLeaveUs;
             int k = 1;
             for (; k < d->histCount; k++) {
                 const trickHistory_t *h = histAt(d, k);
-                if (h->rate[axis] * 0.1f * sign <= BEGIN_RATE || d->tLeave - tEntry >= LOOKBACK_S) {
+                if (h->rate[axis] * 0.1f * sign <= BEGIN_RATE || d->tLeaveUs - tEntryUs >= US(LOOKBACK_S)) {
                     break;
                 }
                 const float dt = h->dtUs * 1e-6f;
                 for (int i = 0; i < 3; i++) {
                     pre[i] += h->rate[i] * 0.1f * dt;
                 }
-                t0 = tEntry;
-                tEntry -= dt;
+                t0Us = tEntryUs;
+                tEntryUs -= h->dtUs;
             }
-            d->preT0[axis][sg] = t0;
+            d->preT0Us[axis][sg] = t0Us;
             if (axis == 1 && sg == 0) {
                 // back pitch Thrust share: replay the walked-back samples oldest first
                 for (int j = k - 1; j >= 1; j--) {
@@ -185,8 +187,8 @@ static void classify(const trickDetector_t *d, trickEvent_t *ev)
     if (n < 1) {
         n = 1;
     }
-    ev->tEndS = d->t;
-    ev->durationS = d->t - d->preT0[main][sg];
+    ev->tEndS = d->tUs * 1e-6f;
+    ev->durationS = (d->tUs - d->preT0Us[main][sg]) * 1e-6f;
 
     if (main == 1 && pt < 0.0f) {
         const float upto = SHARE_UPTO * m;
@@ -231,7 +233,7 @@ static int16_t toDeci(float rate)
 bool trickDetectorStep(trickDetector_t *d, const trickSample_t *s, trickEvent_t *out)
 {
     bool emitted = false;
-    d->t += s->dtS;
+    d->tUs += US(s->dtS);
 
     const float tilt = updateAttitude(d, s->gyro, s->acc, s->dtS);
     const bool upright = tilt < UPRIGHT_DEG;
@@ -261,19 +263,19 @@ bool trickDetectorStep(trickDetector_t *d, const trickSample_t *s, trickEvent_t 
             err[i] = s->gyro[i] - s->setpoint[i];
         }
         const bool ok = upright && maxAbs3(err) < TRACK_ERR;
-        if (ok && d->okSince <= 0.0f) {
-            d->okSince = d->t;
+        if (ok && !d->okSinceUs) {
+            d->okSinceUs = d->tUs;
         }
         if (!ok) {
-            d->okSince = 0.0f;
+            d->okSinceUs = 0;
         }
-        if (d->okSince > 0.0f && d->t - d->okSince >= CONFIRM_HOLD_S) {
+        if (d->okSinceUs && d->tUs - d->okSinceUs >= US(CONFIRM_HOLD_S)) {
             d->pendingEvent.landed = true;
-            d->pendingEvent.tEndS = d->t;
+            d->pendingEvent.tEndS = d->tUs * 1e-6f;
             *out = d->pendingEvent;
             emitted = true;
             d->pending = false;
-        } else if (d->t - d->pendingEvent.tEndS > d->params.recoverS && d->okSince <= 0.0f) {
+        } else if (d->tUs - d->pendingEndUs > US(d->params.recoverS) && !d->okSinceUs) {
             *out = d->pendingEvent;
             emitted = true;
             d->pending = false;
@@ -316,13 +318,13 @@ bool trickDetectorStep(trickDetector_t *d, const trickSample_t *s, trickEvent_t 
         const int cur = fabsf(s->gyro[1]) >= fabsf(s->gyro[0]) ? 1 : 0;
         const bool switched = rp > 2.0f * STOP_RATE && cur != main && fabsf(d->ang[main]) >= 270.0f;
         if (rp < STOP_RATE) {
-            if (d->stopSince <= 0.0f) {
-                d->stopSince = d->t;
+            if (!d->stopSinceUs) {
+                d->stopSinceUs = d->tUs;
             }
         } else {
-            d->stopSince = 0.0f;
+            d->stopSinceUs = 0;
         }
-        if (switched || (d->stopSince > 0.0f && d->t - d->stopSince >= STOP_HOLD_S)) {
+        if (switched || (d->stopSinceUs && d->tUs - d->stopSinceUs >= US(STOP_HOLD_S))) {
             trickEvent_t ev;
             classify(d, &ev);
             if (switched) {
@@ -335,10 +337,11 @@ bool trickDetectorStep(trickDetector_t *d, const trickSample_t *s, trickEvent_t 
             } else {
                 d->pending = true;
                 d->pendingEvent = ev;
-                d->okSince = 0.0f;
+                d->pendingEndUs = d->tUs;
+                d->okSinceUs = 0;
             }
             d->out = false;
-            d->stopSince = 0.0f;
+            d->stopSinceUs = 0;
         }
     }
     return emitted;

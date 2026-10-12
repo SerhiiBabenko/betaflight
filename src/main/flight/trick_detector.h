@@ -84,7 +84,7 @@ typedef struct trickHistory_s {
 
 typedef struct trickDetector_s {
     trickDetectorParams_t params;
-    float t;
+    uint32_t tUs;           // integer clock: float accumulation drifts over a flight
     float up[3];
     float hover;
     uint32_t hoverN;
@@ -97,13 +97,13 @@ typedef struct trickDetector_s {
     // segment since leaving Upright
     bool out;
     bool sawInverted;
-    float tLeave;
+    uint32_t tLeaveUs;
     float ang[3];
-    float stopSince;        // 0 = rotation not stopped
+    uint32_t stopSinceUs;   // 0 = rotation not stopped
 
     // walk-back results per (axis roll/pitch) x (sign -, +), taken when leaving Upright
     float preAng[2][2][3];
-    float preT0[2][2];
+    uint32_t preT0Us[2][2];
     // Thrust share histogram for back pitch (pitch, negative sign)
     float binOn[TRICK_SHARE_BINS];
     float binTot[TRICK_SHARE_BINS];
@@ -112,7 +112,8 @@ typedef struct trickDetector_s {
     // finished trick waiting for its Recovery window
     bool pending;
     trickEvent_t pendingEvent;
-    float okSince;          // 0 = not in Controlled flight
+    uint32_t okSinceUs;     // 0 = not in Controlled flight
+    uint32_t pendingEndUs;
 } trickDetector_t;
 
 void trickDetectorInit(trickDetector_t *d, const trickDetectorParams_t *params);
