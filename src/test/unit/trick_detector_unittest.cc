@@ -21,6 +21,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+#include <algorithm>
 #include <string>
 #include <vector>
 
@@ -189,6 +190,41 @@ TEST_F(TrickDetectorTest, HalfRollThenHalfPitchLookAlikeIsNotATrick)
     for (const trickEvent_t &ev : events) {
         EXPECT_EQ(TRICK_UNMATCHED, ev.trick);
     }
+}
+
+TEST_F(TrickDetectorTest, LongWalkBackIsSpreadOverSteps)
+{
+    // 4 s of slow back pitch while still Upright fills the whole lookback, then the loop:
+    // no single step may walk more than the budget (the FC task must stay short)
+    int maxWork = 0;
+    for (const Segment &seg : std::vector<Segment>{ hover(2.0f), { 4.0f, 0, -18.0f, 0, 1.0f },
+                                                    { 0.8f, 0, -450.0f, 0, 1.0f }, hover(2.0f) }) {
+        const int n = (int)(seg.seconds / DT + 0.5f);
+        for (int i = 0; i < n; i++) {
+            trickSample_t s = {};
+            s.gyro[0] = s.setpoint[0] = seg.roll;
+            s.gyro[1] = s.setpoint[1] = seg.pitch;
+            s.gyro[2] = s.setpoint[2] = seg.yaw;
+            s.acc[2] = seg.thrustG;
+            s.throttle = seg.thrustG * HOVER_THROTTLE;
+            s.hasThrottle = true;
+            s.dtS = DT;
+            s.armed = true;
+            s.acro = true;
+            trickEvent_t ev;
+            if (trickDetectorStep(&det, &s, &ev)) {
+                events.push_back(ev);
+            }
+            maxWork = std::max(maxWork, (int)det.stepWork);
+        }
+    }
+
+    EXPECT_LE(maxWork, TRICK_WALK_BUDGET);
+    ASSERT_EQ(1u, events.size());
+    EXPECT_EQ(TRICK_POWER_LOOP, events[0].trick);      // 4.8 s back pitch: a loop by duration
+    // walked back the full 4 s lookback: the loop (360) plus the slow climb inside the window,
+    // which ends ~71 deg into the loop where the quad leaves Upright
+    EXPECT_NEAR(-(360.0f + 18.0f * (4.0f - 71.0f / 450.0f)), events[0].angles[1], 1.0f);
 }
 
 TEST_F(TrickDetectorTest, NothingIsReportedOutsideAcro)

@@ -73,8 +73,11 @@ typedef struct trickEvent_s {
 } trickEvent_t;
 
 #define TRICK_LOOKBACK_SAMPLES 1000     // 4 s at 250 Hz
+#define TRICK_WALK_SLACK       64       // extra slots: samples that arrive while the walk-back runs
+#define TRICK_HIST_SLOTS       (TRICK_LOOKBACK_SAMPLES + TRICK_WALK_SLACK)
 #define TRICK_SHARE_BIN_DEG    5.0f
 #define TRICK_SHARE_BINS       288      // up to 1440 deg
+#define TRICK_WALK_BUDGET      128      // history entries one step may walk (keeps the FC task short)
 
 typedef struct trickHistory_s {
     int16_t rate[3];        // 0.1 deg/s
@@ -90,7 +93,7 @@ typedef struct trickDetector_s {
     uint32_t hoverN;
 
     // lookback ring buffer (only needed up to the moment the quad leaves Upright)
-    trickHistory_t hist[TRICK_LOOKBACK_SAMPLES];
+    trickHistory_t hist[TRICK_HIST_SLOTS];
     uint16_t histHead;
     uint16_t histCount;
 
@@ -109,11 +112,26 @@ typedef struct trickDetector_s {
     float binTot[TRICK_SHARE_BINS];
     float progress;         // |pitch| degrees turned since the back-pitch walk-back start
 
+    // the walk-back runs over several steps, at most TRICK_WALK_BUDGET entries each
+    bool walking;
+    uint8_t walkCombo;      // axis * 2 + sign being walked; 4 = replaying back-pitch share
+    uint16_t walkLeaveIdx;  // slot of the sample that left Upright
+    uint16_t walkCount;     // usable history when it left
+    uint16_t walkK;         // next entry back from walkLeaveIdx
+    uint32_t walkTEntryUs;
+    uint16_t shareK;        // back-pitch walk length: entries 1..shareK-1 feed the share
+    // live back-pitch share samples held until the walked-back ones are in (order matters)
+    float liveDeg[TRICK_WALK_SLACK];
+    uint8_t liveThrust[TRICK_WALK_SLACK];
+    uint8_t liveN;
+
     // finished trick waiting for its Recovery window
     bool pending;
     trickEvent_t pendingEvent;
     uint32_t okSinceUs;     // 0 = not in Controlled flight
     uint32_t pendingEndUs;
+
+    uint16_t stepWork;      // history entries the last step walked (<= TRICK_WALK_BUDGET)
 } trickDetector_t;
 
 void trickDetectorInit(trickDetector_t *d, const trickDetectorParams_t *params);

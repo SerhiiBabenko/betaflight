@@ -27,6 +27,7 @@
  * Thrust share is measured per degree of rotation, not per sample.
  */
 
+#include <limits.h>
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
@@ -103,12 +104,12 @@ static float updateAttitude(trickDetector_t *d, const float g[3], const float a[
     return acosf(c) * RAD2DEG;
 }
 
-static const trickHistory_t *histAt(const trickDetector_t *d, int back)
+// back = 0 is the entry in slot idx; larger values are older
+static const trickHistory_t *histFrom(const trickDetector_t *d, int idx, int back)
 {
-    // back = 0 is the newest entry
-    int i = (int)d->histHead - 1 - back;
+    int i = idx - back;
     while (i < 0) {
-        i += TRICK_LOOKBACK_SAMPLES;
+        i += TRICK_HIST_SLOTS;
     }
     return &d->hist[i];
 }
@@ -126,6 +127,16 @@ static void addShare(trickDetector_t *d, float deg, bool thrust)
     }
 }
 
+static void startWalkCombo(trickDetector_t *d)
+{
+    const int axis = d->walkCombo >> 1, sg = d->walkCombo & 1;
+    float *pre = d->preAng[axis][sg];
+    pre[0] = pre[1] = pre[2] = 0.0f;
+    d->preT0Us[axis][sg] = d->tLeaveUs;
+    d->walkTEntryUs = d->tLeaveUs - histFrom(d, d->walkLeaveIdx, 0)->dtUs;    // time of entry 1
+    d->walkK = 1;
+}
+
 // Called on the sample where the quad leaves Upright (already pushed to history as entry 0).
 static void beginSegment(trickDetector_t *d)
 {
@@ -138,37 +149,64 @@ static void beginSegment(trickDetector_t *d)
     memset(d->binTot, 0, sizeof(d->binTot));
     d->progress = 0.0f;
 
-    const uint32_t leaveDtUs = histAt(d, 0)->dtUs;
-    for (int axis = 0; axis < 2; axis++) {
-        for (int sg = 0; sg < 2; sg++) {
+    d->walking = true;
+    d->walkLeaveIdx = (d->histHead + TRICK_HIST_SLOTS - 1) % TRICK_HIST_SLOTS;
+    d->walkCount = d->histCount;
+    d->walkCombo = 0;
+    d->liveN = 0;
+    startWalkCombo(d);
+}
+
+// Walk back from "left Upright" while the axis rate keeps its sign above BEGIN_RATE, for each
+// (axis, sign); then replay the back-pitch walk into the share bins, oldest first, followed by
+// the live samples held meanwhile. Visits at most `budget` entries; resumes on the next call.
+static void continueWalk(trickDetector_t *d, int budget)
+{
+    int work = 0;
+    while (d->walking && work < budget) {
+        if (d->walkCombo < 4) {
+            const int axis = d->walkCombo >> 1, sg = d->walkCombo & 1;
             const float sign = sg ? 1.0f : -1.0f;
-            float *pre = d->preAng[axis][sg];
-            pre[0] = pre[1] = pre[2] = 0.0f;
-            uint32_t tEntryUs = d->tLeaveUs - leaveDtUs;   // time of entry 1
-            uint32_t t0Us = d->tLeaveUs;
-            int k = 1;
-            for (; k < d->histCount; k++) {
-                const trickHistory_t *h = histAt(d, k);
-                if (h->rate[axis] * 0.1f * sign <= BEGIN_RATE || d->tLeaveUs - tEntryUs >= US(LOOKBACK_S)) {
-                    break;
-                }
-                const float dt = h->dtUs * 1e-6f;
-                for (int i = 0; i < 3; i++) {
-                    pre[i] += h->rate[i] * 0.1f * dt;
-                }
-                t0Us = tEntryUs;
-                tEntryUs -= h->dtUs;
-            }
-            d->preT0Us[axis][sg] = t0Us;
-            if (axis == 1 && sg == 0) {
-                // back pitch Thrust share: replay the walked-back samples oldest first
-                for (int j = k - 1; j >= 1; j--) {
-                    const trickHistory_t *h = histAt(d, j);
-                    addShare(d, fabsf(h->rate[1] * 0.1f) * h->dtUs * 1e-6f, h->thrust);
+            bool end = d->walkK >= d->walkCount;
+            if (!end) {
+                const trickHistory_t *h = histFrom(d, d->walkLeaveIdx, d->walkK);
+                work++;
+                if (h->rate[axis] * 0.1f * sign <= BEGIN_RATE || d->tLeaveUs - d->walkTEntryUs >= US(LOOKBACK_S)) {
+                    end = true;
+                } else {
+                    const float dt = h->dtUs * 1e-6f;
+                    float *pre = d->preAng[axis][sg];
+                    for (int i = 0; i < 3; i++) {
+                        pre[i] += h->rate[i] * 0.1f * dt;
+                    }
+                    d->preT0Us[axis][sg] = d->walkTEntryUs;
+                    d->walkTEntryUs -= h->dtUs;
+                    d->walkK++;
                 }
             }
+            if (end) {
+                if (axis == 1 && sg == 0) {
+                    d->shareK = d->walkK;
+                }
+                if (++d->walkCombo < 4) {
+                    startWalkCombo(d);
+                }
+            }
+        } else if (d->shareK > 1) {
+            // back pitch Thrust share: walked-back samples oldest first
+            d->shareK--;
+            const trickHistory_t *h = histFrom(d, d->walkLeaveIdx, d->shareK);
+            work++;
+            addShare(d, fabsf(h->rate[1] * 0.1f) * h->dtUs * 1e-6f, h->thrust);
+        } else {
+            for (int i = 0; i < d->liveN; i++) {
+                addShare(d, d->liveDeg[i], d->liveThrust[i]);
+            }
+            d->liveN = 0;
+            d->walking = false;
         }
     }
+    d->stepWork += work;
 }
 
 static void classify(const trickDetector_t *d, trickEvent_t *ev)
@@ -233,6 +271,7 @@ static int16_t toDeci(float rate)
 bool trickDetectorStep(trickDetector_t *d, const trickSample_t *s, trickEvent_t *out)
 {
     bool emitted = false;
+    d->stepWork = 0;
     d->tUs += US(s->dtS);
 
     const float tilt = updateAttitude(d, s->gyro, s->acc, s->dtS);
@@ -243,6 +282,7 @@ bool trickDetectorStep(trickDetector_t *d, const trickSample_t *s, trickEvent_t 
     if (!s->armed || !s->acro || s->vetoed) {
         d->out = false;
         d->pending = false;
+        d->walking = false;
         d->histCount = 0;
         return false;
     }
@@ -289,7 +329,7 @@ bool trickDetectorStep(trickDetector_t *d, const trickSample_t *s, trickEvent_t 
     }
     h->dtUs = (uint16_t)lrintf(s->dtS * 1e6f);
     h->thrust = thrust;
-    d->histHead = (d->histHead + 1) % TRICK_LOOKBACK_SAMPLES;
+    d->histHead = (d->histHead + 1) % TRICK_HIST_SLOTS;
     if (d->histCount < TRICK_LOOKBACK_SAMPLES) {
         d->histCount++;
     }
@@ -300,15 +340,26 @@ bool trickDetectorStep(trickDetector_t *d, const trickSample_t *s, trickEvent_t 
         }
         beginSegment(d);
     }
+    if (d->walking) {
+        // finish at once rather than let new samples overwrite entries still to be walked
+        continueWalk(d, d->liveN < TRICK_WALK_SLACK - 1 ? TRICK_WALK_BUDGET : INT_MAX);
+    }
     for (int i = 0; i < 3; i++) {
         d->ang[i] += s->gyro[i] * s->dtS;
     }
-    addShare(d, fabsf(s->gyro[1]) * s->dtS, thrust);
+    if (d->walking) {
+        d->liveDeg[d->liveN] = fabsf(s->gyro[1]) * s->dtS;
+        d->liveThrust[d->liveN] = thrust;
+        d->liveN++;
+    } else {
+        addShare(d, fabsf(s->gyro[1]) * s->dtS, thrust);
+    }
     d->sawInverted |= inverted;
 
     if (!d->sawInverted) {
         if (upright) {
             d->out = false;     // came back without going Inverted: not a trick
+            d->walking = false;
         }
         return emitted;
     }
@@ -325,6 +376,7 @@ bool trickDetectorStep(trickDetector_t *d, const trickSample_t *s, trickEvent_t 
             d->stopSinceUs = 0;
         }
         if (switched || (d->stopSinceUs && d->tUs - d->stopSinceUs >= US(STOP_HOLD_S))) {
+            continueWalk(d, INT_MAX);  // a trick can't end this soon after leaving; just in case
             trickEvent_t ev;
             classify(d, &ev);
             if (switched) {
