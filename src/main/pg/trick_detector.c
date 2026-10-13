@@ -26,9 +26,11 @@
 #include "pg/pg.h"
 #include "pg/pg_ids.h"
 
+#include "flight/trick_detector.h"
+
 #include "trick_detector.h"
 
-PG_REGISTER_WITH_RESET_TEMPLATE(trickDetectorConfig_t, trickDetectorConfig, PG_TRICK_DETECTOR_CONFIG, 0);
+PG_REGISTER_WITH_RESET_TEMPLATE(trickDetectorConfig_t, trickDetectorConfig, PG_TRICK_DETECTOR_CONFIG, 1);
 
 PG_RESET_TEMPLATE(trickDetectorConfig_t, trickDetectorConfig,
     .hover_throttle = 0,
@@ -36,6 +38,7 @@ PG_RESET_TEMPLATE(trickDetectorConfig_t, trickDetectorConfig,
     .loop_min_ms = 1900,
     .recover_ms = 500,
     .announce_ms = 1500,
+    .level = TRICK_LEVEL_EASY,
 );
 
 #endif

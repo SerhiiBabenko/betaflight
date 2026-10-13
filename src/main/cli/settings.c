@@ -575,6 +575,12 @@ const char* const lookupTableYawType[] = {
 };
 #endif // USE_WING
 
+#ifdef USE_TRICK_DETECTOR
+static const char * const lookupTableTrickLevel[] = {
+    "EASY", "NORMAL", "STRICT"
+};
+#endif
+
 #ifdef USE_TRANSPONDER
 static const char * const lookupTableTransponderProvider[] = {
     "NONE", "ILAP", "ARCITIMER", "ERLT"
@@ -726,6 +732,9 @@ const lookupTableEntry_t lookupTables[] = {
 #endif // USE_WING
 #ifdef USE_TRANSPONDER
     LOOKUP_TABLE_ENTRY(lookupTableTransponderProvider),
+#endif
+#ifdef USE_TRICK_DETECTOR
+    LOOKUP_TABLE_ENTRY(lookupTableTrickLevel),
 #endif
 };
 
@@ -2102,6 +2111,7 @@ const clivalue_t valueTable[] = {
     { "trick_loop_min_ms", VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = { 0, 5000 }, PG_TRICK_DETECTOR_CONFIG, offsetof(trickDetectorConfig_t, loop_min_ms) },
     { "trick_recover_ms", VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = { 100, 2000 }, PG_TRICK_DETECTOR_CONFIG, offsetof(trickDetectorConfig_t, recover_ms) },
     { "trick_announce_ms", VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = { 500, 5000 }, PG_TRICK_DETECTOR_CONFIG, offsetof(trickDetectorConfig_t, announce_ms) },
+    { "trick_level", VAR_UINT8 | MASTER_VALUE | MODE_LOOKUP, .config.lookup = { TABLE_TRICK_LEVEL }, PG_TRICK_DETECTOR_CONFIG, offsetof(trickDetectorConfig_t, level) },
 #endif
 
 #if defined(USE_GIMBAL)

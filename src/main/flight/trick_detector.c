@@ -209,6 +209,51 @@ static void continueWalk(trickDetector_t *d, int budget)
     d->stepWork += work;
 }
 
+// Grade bands per trick and level: how far the rotation may miss whole turns, under (-) and
+// over (+), in deg. Beyond the ugly band the trick is not shown. A clean Back Flip exits
+// ~30 deg nose-down into forward flight, so its bands lean under. From session-06 (#24).
+typedef struct {
+    uint8_t cleanUnder, cleanOver;
+    uint8_t plainUnder, plainOver;
+    uint8_t uglyUnder, uglyOver;
+} gradeBands_t;
+
+static const gradeBands_t frontRollBands[TRICK_LEVEL_COUNT] = {
+    [TRICK_LEVEL_EASY]   = { 14, 14, 45, 45, 90, 90 },
+    [TRICK_LEVEL_NORMAL] = { 14, 14, 30, 30, 45, 45 },
+    [TRICK_LEVEL_STRICT] = {  8,  8, 15, 15, 25, 25 },
+};
+
+static const gradeBands_t backFlipBands[TRICK_LEVEL_COUNT] = {
+    [TRICK_LEVEL_EASY]   = { 35, 25, 45, 40, 90, 90 },
+    [TRICK_LEVEL_NORMAL] = { 35, 25, 45, 35, 60, 45 },
+    [TRICK_LEVEL_STRICT] = { 25, 15, 35, 20, 45, 25 },
+};
+
+static bool within(float err, uint8_t under, uint8_t over)
+{
+    return err >= -(float)under && err <= (float)over;
+}
+
+// grades a Flip or Roll by its miss from whole turns; false when the level hides it
+static bool gradeTrick(trickEvent_t *ev, float err, uint8_t level)
+{
+    if (level >= TRICK_LEVEL_COUNT) {
+        level = TRICK_LEVEL_EASY;
+    }
+    const gradeBands_t *b = ev->trick == TRICK_BACK_FLIP ? &backFlipBands[level] : &frontRollBands[level];
+    if (within(err, b->cleanUnder, b->cleanOver)) {
+        ev->grade = TRICK_GRADE_CLEAN;
+    } else if (within(err, b->plainUnder, b->plainOver)) {
+        ev->grade = TRICK_GRADE_PLAIN;
+    } else if (within(err, b->uglyUnder, b->uglyOver)) {
+        ev->grade = TRICK_GRADE_UGLY;
+    } else {
+        return false;
+    }
+    return true;
+}
+
 static void classify(const trickDetector_t *d, trickEvent_t *ev)
 {
     memset(ev, 0, sizeof(*ev));
@@ -257,6 +302,10 @@ static void classify(const trickDetector_t *d, trickEvent_t *ev)
         }
         if (ev->trick != TRICK_POWER_LOOP) {
             ev->count = (uint8_t)n;
+            if (!gradeTrick(ev, m - 360.0f * n, d->params.level)) {
+                ev->trick = TRICK_UNMATCHED;    // too far from whole turns for this level
+                ev->count = 1;
+            }
         }
     }
 }
@@ -425,15 +474,20 @@ int trickFormatAnnouncement(const trickEvent_t *ev, char *buf, size_t len)
         buf[0] = '\0';
         return 0;
     }
+    const char *grade = ev->grade == TRICK_GRADE_CLEAN ? "CLEAN " : ev->grade == TRICK_GRADE_UGLY ? "UGLY " : "";
     int n;
     if (ev->count == 2) {
-        n = snprintf(buf, len, "DOUBLE %s!", name);
+        n = snprintf(buf, len, "%sDOUBLE %s!", grade, name);
     } else if (ev->count == 3) {
-        n = snprintf(buf, len, "TRIPLE %s!", name);
+        n = snprintf(buf, len, "%sTRIPLE %s!", grade, name);
     } else if (ev->count > 3) {
-        n = snprintf(buf, len, "%dX %s!", ev->count, name);
+        n = snprintf(buf, len, "%s%dX %s!", grade, ev->count, name);
     } else {
-        n = snprintf(buf, len, "%s!", name);
+        n = snprintf(buf, len, "%s%s!", grade, name);
+    }
+    if (n > TRICK_TEXT_MAX && ev->count > 1) {
+        // too wide for the OSD: the count as a number first (v2's longer names add a short name next)
+        n = snprintf(buf, len, "%s%dX %s!", grade, ev->count, name);
     }
     return n < 0 ? 0 : n;
 }

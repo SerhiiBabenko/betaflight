@@ -42,11 +42,29 @@ typedef enum {
     TRICK_POWER_LOOP,
 } trickId_e;
 
+// how strictly the rotation angle is judged (CLI trick_level)
+typedef enum {
+    TRICK_LEVEL_EASY = 0,
+    TRICK_LEVEL_NORMAL,
+    TRICK_LEVEL_STRICT,
+    TRICK_LEVEL_COUNT,
+} trickLevel_e;
+
+// how close the rotation came to whole turns; announced before the name
+typedef enum {
+    TRICK_GRADE_PLAIN = 0,
+    TRICK_GRADE_CLEAN,
+    TRICK_GRADE_UGLY,
+} trickGrade_e;
+
+#define TRICK_TEXT_MAX         25       // OSD columns for the announcement
+
 typedef struct trickDetectorParams_s {
     float hoverThrottle;    // 0..1; 0 = learn in flight
     float loopShare;        // back pitch Thrust share above this is a Power Loop (0..1)
     float loopMinS;         // back pitch longer than this is a Power Loop; 0 = off
     float recoverS;         // Recovery window
+    uint8_t level;          // trickLevel_e
 } trickDetectorParams_t;
 
 typedef struct trickSample_s {
@@ -64,6 +82,7 @@ typedef struct trickSample_s {
 typedef struct trickEvent_s {
     trickId_e trick;
     uint8_t count;          // rotations (Front/Back Flip, Roll); 1 otherwise
+    trickGrade_e grade;
     bool rollRight;
     bool landed;
     float tEndS;
@@ -137,5 +156,5 @@ typedef struct trickDetector_s {
 void trickDetectorInit(trickDetector_t *d, const trickDetectorParams_t *params);
 // Feed one sample. Returns true and fills *out when a trick is over (landed or not).
 bool trickDetectorStep(trickDetector_t *d, const trickSample_t *s, trickEvent_t *out);
-// "DOUBLE BACK FLIP!" etc. Writes "" and returns 0 when there is nothing to announce.
+// "CLEAN DOUBLE BACK FLIP!" etc., at most TRICK_TEXT_MAX characters. Writes "" and returns 0 when there is nothing to announce.
 int trickFormatAnnouncement(const trickEvent_t *ev, char *buf, size_t len);

@@ -67,6 +67,7 @@ static void initDetector(void)
         .loopShare = cfg->loop_share / 100.0f,
         .loopMinS = cfg->loop_min_ms / 1000.0f,
         .recoverS = cfg->recover_ms / 1000.0f,
+        .level = cfg->level,
     };
     trickDetectorInit(&detector, &params);
     initialised = true;

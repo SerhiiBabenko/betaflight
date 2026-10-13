@@ -21,7 +21,8 @@
 /*
  * trick_replay: feeds recorded samples through the trick detector core (host build).
  *
- * Usage: trick_replay [hover_throttle loop_share loop_min_s recover_s] < samples.txt
+ * Usage: trick_replay [hover_throttle loop_share loop_min_s recover_s [level]] < samples.txt
+ *        level: 0 EASY (default), 1 NORMAL, 2 STRICT
  * Input, one sample per line (whitespace separated):
  *   dt gx gy gz ax ay az sx sy sz throttle has_throttle armed acro vetoed
  * Output, one line per finished trick:
@@ -37,12 +38,15 @@ static const char *const trickNames[] = { "none", "unmatched", "front_flip", "ba
 
 int main(int argc, char **argv)
 {
-    trickDetectorParams_t params = { 0.0f, 0.25f, 1.9f, 0.5f };
-    if (argc == 5) {
+    trickDetectorParams_t params = { 0.0f, 0.25f, 1.9f, 0.5f, TRICK_LEVEL_EASY };
+    if (argc >= 5) {
         params.hoverThrottle = strtof(argv[1], NULL);
         params.loopShare = strtof(argv[2], NULL);
         params.loopMinS = strtof(argv[3], NULL);
         params.recoverS = strtof(argv[4], NULL);
+    }
+    if (argc >= 6) {
+        params.level = (uint8_t)atoi(argv[5]);     // trickLevel_e: 0 EASY, 1 NORMAL, 2 STRICT
     }
     static trickDetector_t det;
     trickDetectorInit(&det, &params);

@@ -31,6 +31,7 @@ typedef struct trickDetectorConfig_s {
     uint16_t loop_min_ms;       // back pitch longer than this is a Power Loop; 0 = off
     uint16_t recover_ms;        // Recovery window
     uint16_t announce_ms;       // how long the OSD announcement stays on screen
+    uint8_t level;              // trickLevel_e: how strictly the rotation angle is judged
 } trickDetectorConfig_t;
 
 PG_DECLARE(trickDetectorConfig_t, trickDetectorConfig);

@@ -51,7 +51,7 @@ protected:
 
     void SetUp() override
     {
-        trickDetectorParams_t p = { 0.0f, 0.25f, 1.9f, 0.5f };
+        trickDetectorParams_t p = { 0.0f, 0.25f, 1.9f, 0.5f, TRICK_LEVEL_EASY };
         trickDetectorInit(&det, &p);
     }
 
@@ -227,6 +227,89 @@ TEST_F(TrickDetectorTest, LongWalkBackIsSpreadOverSteps)
     EXPECT_NEAR(-(360.0f + 18.0f * (4.0f - 71.0f / 450.0f)), events[0].angles[1], 1.0f);
 }
 
+// one trick of `deg` degrees on pitch (+ forward, - back) or roll, flown in 0.7 s without thrust
+static Segment pitchBy(float deg) { return { 0.7f, 0, deg / 0.7f, 0, 0.0f }; }
+static Segment rollBy(float deg) { return { 0.5f, deg / 0.5f, 0, 0, 0.0f }; }
+
+class TrickGradeTest : public TrickDetectorTest {
+protected:
+    void level(trickLevel_e lv)
+    {
+        trickDetectorParams_t p = { 0.0f, 0.25f, 1.9f, 0.5f, (uint8_t)lv };
+        trickDetectorInit(&det, &p);
+    }
+    // the single event of one trick flown between hovers
+    trickEvent_t one(const Segment &trick)
+    {
+        events.clear();
+        fly({ hover(2.0f), trick, hover(2.0f) });
+        EXPECT_EQ(1u, events.size());
+        return events.empty() ? trickEvent_t{} : events[0];
+    }
+};
+
+TEST_F(TrickGradeTest, FrontFlipIsCleanPlainOrUglyByHowFarItMissesAFullTurn)
+{
+    EXPECT_EQ(TRICK_GRADE_CLEAN, one(pitchBy(360.0f)).grade);
+    EXPECT_EQ(TRICK_GRADE_CLEAN, one(pitchBy(350.0f)).grade);
+    EXPECT_EQ(TRICK_GRADE_PLAIN, one(pitchBy(330.0f)).grade);
+    EXPECT_EQ(TRICK_GRADE_PLAIN, one(pitchBy(400.0f)).grade);
+    const trickEvent_t ugly = one(pitchBy(295.0f));
+    EXPECT_EQ(TRICK_FRONT_FLIP, ugly.trick);
+    EXPECT_EQ(TRICK_GRADE_UGLY, ugly.grade);
+}
+
+TEST_F(TrickGradeTest, BackFlipExitingNoseDownIsStillClean)
+{
+    // a clean Back Flip ends ~30 deg nose-down, into forward flight; a Front Flip that short is not clean
+    EXPECT_EQ(TRICK_GRADE_CLEAN, one(pitchBy(-330.0f)).grade);
+    EXPECT_EQ(TRICK_GRADE_PLAIN, one(pitchBy(330.0f)).grade);
+    EXPECT_EQ(TRICK_GRADE_PLAIN, one(pitchBy(-395.0f)).grade);
+    EXPECT_EQ(TRICK_GRADE_UGLY, one(pitchBy(-310.0f)).grade);   // stalled ~50 short
+}
+
+TEST_F(TrickGradeTest, RollIsGradedLikeAFrontFlip)
+{
+    EXPECT_EQ(TRICK_GRADE_CLEAN, one(rollBy(370.0f)).grade);
+    EXPECT_EQ(TRICK_GRADE_UGLY, one(rollBy(-430.0f)).grade);
+}
+
+TEST_F(TrickGradeTest, PowerLoopIsNeverGraded)
+{
+    const trickEvent_t ev = one({ 2.4f, 0, -150.0f, 0, 0.0f });
+    EXPECT_EQ(TRICK_POWER_LOOP, ev.trick);
+    EXPECT_EQ(TRICK_GRADE_PLAIN, ev.grade);
+}
+
+TEST_F(TrickGradeTest, StricterLevelsHideWhatEasyCallsUgly)
+{
+    EXPECT_EQ(TRICK_GRADE_UGLY, one(pitchBy(-310.0f)).grade);
+    level(TRICK_LEVEL_NORMAL);
+    EXPECT_EQ(TRICK_GRADE_UGLY, one(pitchBy(-310.0f)).grade);
+    level(TRICK_LEVEL_STRICT);
+    const trickEvent_t ev = one(pitchBy(-310.0f));
+    EXPECT_EQ(TRICK_UNMATCHED, ev.trick);
+    char buf[32];
+    EXPECT_EQ(0, trickFormatAnnouncement(&ev, buf, sizeof(buf)));
+}
+
+TEST_F(TrickGradeTest, StrictNarrowsClean)
+{
+    level(TRICK_LEVEL_STRICT);
+    EXPECT_EQ(TRICK_GRADE_CLEAN, one(pitchBy(355.0f)).grade);
+    EXPECT_EQ(TRICK_GRADE_PLAIN, one(pitchBy(350.0f)).grade);
+    EXPECT_EQ(TRICK_GRADE_UGLY, one(pitchBy(340.0f)).grade);
+}
+
+TEST_F(TrickGradeTest, DoublesAreGradedAgainstTwoTurnsOnEveryLevel)
+{
+    level(TRICK_LEVEL_STRICT);
+    const trickEvent_t ev = one({ 1.4f, 0, 715.0f / 1.4f, 0, 0.0f });
+    EXPECT_EQ(TRICK_FRONT_FLIP, ev.trick);
+    EXPECT_EQ(2, ev.count);
+    EXPECT_EQ(TRICK_GRADE_CLEAN, ev.grade);
+}
+
 TEST_F(TrickDetectorTest, NothingIsReportedOutsideAcro)
 {
     for (int i = 0; i < (int)(3.0f / DT); i++) {
@@ -271,6 +354,39 @@ TEST(TrickAnnouncementTest, CountsAsDoubleTripleThenNumber)
     EXPECT_EQ("DOUBLE BACK FLIP!", announce(TRICK_BACK_FLIP, 2));
     EXPECT_EQ("TRIPLE ROLL!", announce(TRICK_ROLL, 3));
     EXPECT_EQ("4X FRONT FLIP!", announce(TRICK_FRONT_FLIP, 4));
+}
+
+static std::string announce(trickId_e trick, uint8_t count, trickGrade_e grade)
+{
+    trickEvent_t ev = {};
+    ev.trick = trick;
+    ev.count = count;
+    ev.grade = grade;
+    ev.landed = true;
+    char buf[32];
+    trickFormatAnnouncement(&ev, buf, sizeof(buf));
+    return buf;
+}
+
+TEST(TrickAnnouncementTest, GradeComesFirst)
+{
+    EXPECT_EQ("CLEAN ROLL!", announce(TRICK_ROLL, 1, TRICK_GRADE_CLEAN));
+    EXPECT_EQ("UGLY DOUBLE BACK FLIP!", announce(TRICK_BACK_FLIP, 2, TRICK_GRADE_UGLY));
+    EXPECT_EQ("CLEAN TRIPLE FRONT FLIP!", announce(TRICK_FRONT_FLIP, 3, TRICK_GRADE_CLEAN));
+    EXPECT_EQ("POWER LOOP!", announce(TRICK_POWER_LOOP, 1, TRICK_GRADE_PLAIN));
+}
+
+TEST(TrickAnnouncementTest, EveryAnnouncementFitsTheOsdWidth)
+{
+    for (int t = TRICK_FRONT_FLIP; t <= TRICK_POWER_LOOP; t++) {
+        for (int n = 1; n <= 255; n++) {
+            for (int g = TRICK_GRADE_PLAIN; g <= TRICK_GRADE_UGLY; g++) {
+                const std::string text = announce((trickId_e)t, (uint8_t)n, (trickGrade_e)g);
+                EXPECT_LE(text.size(), (size_t)TRICK_TEXT_MAX) << text;
+                EXPECT_FALSE(text.empty());
+            }
+        }
+    }
 }
 
 TEST(TrickAnnouncementTest, UnmatchedOrNotLandedAnnouncesNothing)
